@@ -1,0 +1,19 @@
+{
+  "name": "shopify-discount-monitor",
+  "version": "1.0.0",
+  "description": "Monitors Shopify discount codes and posts notifications to Discord via webhook",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": ["shopify", "discord", "monitor", "discounts"],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "node-cron": "^4.2.1"
+  }
+}
