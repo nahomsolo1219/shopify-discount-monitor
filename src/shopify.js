@@ -1,14 +1,21 @@
 const config = require('./config');
+const { loadToken } = require('./token');
 
 const BASE_URL = `https://${config.shopifyStore}/admin/api/${config.shopifyApiVersion}`;
 
-const headers = {
-  'X-Shopify-Access-Token': config.shopifyAccessToken,
-  'Content-Type': 'application/json',
-};
+function getHeaders() {
+  const token = loadToken();
+  if (!token) {
+    throw new Error('No Shopify access token available');
+  }
+  return {
+    'X-Shopify-Access-Token': token,
+    'Content-Type': 'application/json',
+  };
+}
 
 async function shopifyFetch(url) {
-  const res = await fetch(url, { headers });
+  const res = await fetch(url, { headers: getHeaders() });
 
   if (res.status === 429) {
     const retryAfter = parseFloat(res.headers.get('Retry-After') || '2');

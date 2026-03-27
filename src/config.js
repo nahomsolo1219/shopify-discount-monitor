@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const required = ['SHOPIFY_STORE', 'SHOPIFY_ACCESS_TOKEN', 'DISCORD_WEBHOOK_URL'];
+const required = ['SHOPIFY_STORE', 'SHOPIFY_CLIENT_ID', 'SHOPIFY_CLIENT_SECRET', 'DISCORD_WEBHOOK_URL', 'APP_URL'];
 
 for (const key of required) {
   if (!process.env[key]) {
@@ -11,7 +11,10 @@ for (const key of required) {
 
 module.exports = {
   shopifyStore: process.env.SHOPIFY_STORE,
-  shopifyAccessToken: process.env.SHOPIFY_ACCESS_TOKEN,
+  shopifyClientId: process.env.SHOPIFY_CLIENT_ID,
+  shopifyClientSecret: process.env.SHOPIFY_CLIENT_SECRET,
+  shopifyScopes: process.env.SHOPIFY_SCOPES || 'read_price_rules,read_discounts',
+  appUrl: process.env.APP_URL.replace(/\/+$/, ''), // strip trailing slash
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
   pollIntervalMinutes: parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 5,
   port: parseInt(process.env.PORT, 10) || 3000,

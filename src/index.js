@@ -4,21 +4,30 @@ const config = require('./config');
 const shopify = require('./shopify');
 const discord = require('./discord');
 const store = require('./store');
+const { isTokenAvailable } = require('./token');
+const auth = require('./auth');
 
 const app = express();
 let lastPollTime = null;
 let isFirstRun = true;
+let cronJob = null;
 
 app.get('/', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'shopify-discount-monitor',
+    authorized: isTokenAvailable(),
     lastPoll: lastPollTime,
     pollInterval: `${config.pollIntervalMinutes} minutes`,
   });
 });
 
 async function poll() {
+  if (!isTokenAvailable()) {
+    console.log('[Poll] No token available, skipping');
+    return;
+  }
+
   const silent = isFirstRun;
   const label = silent ? 'Initial sync' : 'Poll';
 
@@ -57,17 +66,35 @@ async function poll() {
   }
 }
 
-// Run initial poll on startup
-poll();
+function startPolling() {
+  if (cronJob) return; // already running
 
-// Schedule recurring polls
-const cronExpression = `*/${config.pollIntervalMinutes} * * * *`;
-cron.schedule(cronExpression, () => {
+  console.log(`Starting poll cycle (every ${config.pollIntervalMinutes} minutes)`);
+
+  // Run initial poll
   poll();
+
+  // Schedule recurring polls
+  const cronExpression = `*/${config.pollIntervalMinutes} * * * *`;
+  cronJob = cron.schedule(cronExpression, () => {
+    poll();
+  });
+}
+
+// Register OAuth routes — onTokenAcquired callback starts polling after auth
+auth.registerRoutes(app, () => {
+  console.log('[Auth] Token acquired, starting polling');
+  startPolling();
 });
 
-console.log(`Polling every ${config.pollIntervalMinutes} minutes`);
+// On startup, check if we already have a token
+if (isTokenAvailable()) {
+  console.log('Existing token found, starting polling');
+  startPolling();
+} else {
+  console.log(`No Shopify token found. Visit ${config.appUrl}/auth to authorize the app.`);
+}
 
 app.listen(config.port, () => {
-  console.log(`Health check server running on port ${config.port}`);
+  console.log(`Server running on port ${config.port}`);
 });
