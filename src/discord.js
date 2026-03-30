@@ -1,5 +1,7 @@
 const config = require('./config');
 
+const TIMEZONE = 'America/Edmonton';
+
 const COLORS = {
   GREEN: 0x2ecc71,
   ORANGE: 0xf39c12,
@@ -36,6 +38,15 @@ function getStatus(discount) {
 function formatDate(dateStr) {
   if (!dateStr) return 'N/A';
   return new Date(dateStr).toLocaleString('en-US', {
+    timeZone: TIMEZONE,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function formatNow() {
+  return new Date().toLocaleString('en-US', {
+    timeZone: TIMEZONE,
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -48,20 +59,23 @@ function buildNewEmbed(discount) {
     : '🏷️ New Coupon Created';
   const color = highValue ? COLORS.RED : COLORS.GREEN;
 
+  const fields = [
+    { name: 'Code', value: discount.code, inline: true },
+    { name: 'Type', value: formatType(discount), inline: true },
+    { name: 'Value', value: formatValue(discount), inline: true },
+    { name: 'Usage Limit', value: String(discount.usage_limit ?? 'Unlimited'), inline: true },
+    { name: 'One Per Customer', value: discount.once_per_customer ? 'Yes' : 'No', inline: true },
+    { name: 'Status', value: getStatus(discount), inline: true },
+    { name: 'Valid From', value: formatDate(discount.starts_at), inline: true },
+    { name: 'Valid Until', value: formatDate(discount.ends_at), inline: true },
+    { name: 'Created By', value: discount.created_by || 'Shopify Admin', inline: true },
+  ];
+
   return {
     title,
     color,
-    fields: [
-      { name: 'Code', value: discount.code, inline: true },
-      { name: 'Type', value: formatType(discount), inline: true },
-      { name: 'Value', value: formatValue(discount), inline: true },
-      { name: 'Usage Limit', value: String(discount.usage_limit ?? 'Unlimited'), inline: true },
-      { name: 'One Per Customer', value: discount.once_per_customer ? 'Yes' : 'No', inline: true },
-      { name: 'Status', value: getStatus(discount), inline: true },
-      { name: 'Valid From', value: formatDate(discount.starts_at), inline: true },
-      { name: 'Valid Until', value: formatDate(discount.ends_at), inline: true },
-    ],
-    footer: { text: `Created: ${formatDate(discount.created_at)}` },
+    fields,
+    footer: { text: `Created: ${formatDate(discount.created_at)} MT` },
     timestamp: new Date().toISOString(),
   };
 }
@@ -73,7 +87,10 @@ function buildEditedEmbed(discount, changes) {
     : '✏️ Coupon Modified';
   const color = highValue ? COLORS.RED : COLORS.ORANGE;
 
-  const fields = [{ name: 'Code', value: discount.code, inline: false }];
+  const fields = [
+    { name: 'Code', value: discount.code, inline: false },
+    { name: 'Modified By', value: discount.updated_by || 'Shopify Admin', inline: false },
+  ];
 
   for (const change of changes) {
     const label = change.field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -88,7 +105,7 @@ function buildEditedEmbed(discount, changes) {
     title,
     color,
     fields,
-    footer: { text: 'Discount modified' },
+    footer: { text: `Modified: ${formatNow()} MT` },
     timestamp: new Date().toISOString(),
   };
 }
@@ -102,7 +119,7 @@ function buildDeletedEmbed(discount) {
       { name: 'Type', value: formatType(discount), inline: true },
       { name: 'Value', value: formatValue(discount), inline: true },
     ],
-    footer: { text: 'Discount deleted' },
+    footer: { text: `Removed: ${formatNow()} MT` },
     timestamp: new Date().toISOString(),
   };
 }

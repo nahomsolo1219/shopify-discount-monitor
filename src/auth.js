@@ -28,12 +28,6 @@ function registerRoutes(app, onTokenAcquired) {
   // Redirect to Shopify's OAuth authorization page
   app.get('/auth', (_req, res) => {
     const redirectUri = `${config.appUrl}/auth/callback`;
-    const authUrl =
-      `https://${config.shopifyStore}/admin/oauth/authorize` +
-      `?client_id=${config.shopifyClientId}` +
-      `&scope=${config.shopifyScopes}` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&grant_options[]=per-user`;
 
     // Use offline access (omit grant_options for offline, which is the default)
     const offlineAuthUrl =
@@ -81,18 +75,39 @@ function registerRoutes(app, onTokenAcquired) {
       }
 
       const tokenData = await tokenResponse.json();
-      saveToken(tokenData.access_token);
+      const accessToken = tokenData.access_token;
 
-      console.log('[Auth] Access token acquired and saved');
+      saveToken(accessToken);
+
+      // Log the token so the user can persist it in Railway env vars
+      console.log('[Auth] =========================================');
+      console.log('[Auth] Token acquired! Add this as SHOPIFY_ACCESS_TOKEN');
+      console.log('[Auth] in your Railway env vars to persist across redeployments:');
+      console.log(`[Auth] ${accessToken}`);
+      console.log('[Auth] =========================================');
 
       // Notify the caller so polling can start
       if (onTokenAcquired) {
         onTokenAcquired();
       }
 
-      res.send(
-        'Authorization successful! The discount monitor is now active. You can close this tab.'
-      );
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Authorization Successful</title></head>
+        <body style="font-family: system-ui, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px;">
+          <h1>Authorization Successful!</h1>
+          <p>The discount monitor is now active and polling for changes.</p>
+          <hr>
+          <h2>Important: Persist your token</h2>
+          <p>To keep the app working across Railway redeployments, add this environment variable in your Railway dashboard:</p>
+          <p><strong>Variable name:</strong> <code>SHOPIFY_ACCESS_TOKEN</code></p>
+          <p><strong>Value:</strong></p>
+          <pre style="background: #f4f4f4; padding: 12px; border-radius: 4px; word-break: break-all;">${accessToken}</pre>
+          <p style="color: #666; font-size: 14px;">This is an offline access token that does not expire. You can close this tab once you've saved it.</p>
+        </body>
+        </html>
+      `);
     } catch (err) {
       console.error('[Auth] Callback error:', err.message);
       res.status(500).send('An error occurred during authorization.');

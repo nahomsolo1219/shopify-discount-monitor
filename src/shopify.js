@@ -2,6 +2,7 @@ const config = require('./config');
 const { loadToken } = require('./token');
 
 const BASE_URL = `https://${config.shopifyStore}/admin/api/${config.shopifyApiVersion}`;
+const TIMEZONE = 'America/Edmonton';
 
 function getHeaders() {
   const token = loadToken();
@@ -72,6 +73,31 @@ async function fetchDiscountCodes(priceRuleId) {
 }
 
 /**
+ * Try to fetch events for a price rule to find who created/updated it.
+ * Shopify REST API price_rules don't include user info directly,
+ * but the Events API can provide attribution via the `message` field.
+ * Returns { created_by, updated_by } or empty strings if unavailable.
+ */
+async function fetchPriceRuleAttribution(priceRuleId) {
+  try {
+    const { json } = await shopifyFetch(
+      `${BASE_URL}/events.json?filter=PriceRule&verb=create&limit=5`
+    );
+    const events = json.events || [];
+    // Look for an event matching this price rule
+    const createEvent = events.find(
+      (e) => e.subject_id === priceRuleId && e.verb === 'create'
+    );
+    if (createEvent && createEvent.message) {
+      return { created_by: createEvent.message, updated_by: '' };
+    }
+  } catch {
+    // Events API may not be available — that's fine
+  }
+  return { created_by: '', updated_by: '' };
+}
+
+/**
  * Fetch all discounts: price rules enriched with their discount codes.
  * Returns a map keyed by "priceRuleId-discountCodeId" for easy diffing.
  */
@@ -82,26 +108,30 @@ async function fetchAllDiscounts() {
   for (const rule of priceRules) {
     const codes = await fetchDiscountCodes(rule.id);
 
+    // Try to get attribution info
+    const attribution = await fetchPriceRuleAttribution(rule.id);
+
+    const baseFields = {
+      price_rule_id: rule.id,
+      title: rule.title,
+      value: rule.value,
+      value_type: rule.value_type,
+      target_type: rule.target_type,
+      target_selection: rule.target_selection,
+      usage_limit: rule.usage_limit,
+      once_per_customer: rule.once_per_customer,
+      starts_at: rule.starts_at,
+      ends_at: rule.ends_at,
+      created_at: rule.created_at,
+      updated_at: rule.updated_at,
+      prerequisite_subtotal_range: rule.prerequisite_subtotal_range,
+      created_by: attribution.created_by,
+      updated_by: attribution.updated_by,
+    };
+
     if (codes.length === 0) {
-      // Price rule with no discount codes — track it by rule ID alone
       const key = `rule-${rule.id}`;
-      discountMap[key] = {
-        key,
-        price_rule_id: rule.id,
-        code: '(no code)',
-        title: rule.title,
-        value: rule.value,
-        value_type: rule.value_type,
-        target_type: rule.target_type,
-        target_selection: rule.target_selection,
-        usage_limit: rule.usage_limit,
-        once_per_customer: rule.once_per_customer,
-        starts_at: rule.starts_at,
-        ends_at: rule.ends_at,
-        created_at: rule.created_at,
-        updated_at: rule.updated_at,
-        prerequisite_subtotal_range: rule.prerequisite_subtotal_range,
-      };
+      discountMap[key] = { key, ...baseFields, code: '(no code)' };
       continue;
     }
 
@@ -109,22 +139,10 @@ async function fetchAllDiscounts() {
       const key = `rule-${rule.id}-code-${code.id}`;
       discountMap[key] = {
         key,
-        price_rule_id: rule.id,
+        ...baseFields,
         discount_code_id: code.id,
         code: code.code,
-        title: rule.title,
-        value: rule.value,
-        value_type: rule.value_type,
-        target_type: rule.target_type,
-        target_selection: rule.target_selection,
-        usage_limit: rule.usage_limit,
-        once_per_customer: rule.once_per_customer,
-        starts_at: rule.starts_at,
-        ends_at: rule.ends_at,
-        created_at: rule.created_at,
-        updated_at: rule.updated_at,
         usage_count: code.usage_count,
-        prerequisite_subtotal_range: rule.prerequisite_subtotal_range,
       };
     }
   }
@@ -132,4 +150,12 @@ async function fetchAllDiscounts() {
   return discountMap;
 }
 
-module.exports = { fetchAllDiscounts };
+function formatLastPoll() {
+  return new Date().toLocaleString('en-US', {
+    timeZone: TIMEZONE,
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+module.exports = { fetchAllDiscounts, formatLastPoll };

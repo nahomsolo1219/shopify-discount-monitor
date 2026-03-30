@@ -11,6 +11,12 @@ function ensureDataDir() {
 }
 
 function loadToken() {
+  // Check env var first (persists across Railway redeploys)
+  if (process.env.SHOPIFY_ACCESS_TOKEN) {
+    return process.env.SHOPIFY_ACCESS_TOKEN;
+  }
+
+  // Fall back to local JSON file
   ensureDataDir();
   if (!fs.existsSync(TOKEN_FILE)) {
     return null;
@@ -25,6 +31,10 @@ function loadToken() {
 }
 
 function saveToken(token) {
+  // Also set in-process env var so loadToken() picks it up immediately
+  process.env.SHOPIFY_ACCESS_TOKEN = token;
+
+  // Save to JSON file as fallback for local dev
   ensureDataDir();
   fs.writeFileSync(
     TOKEN_FILE,

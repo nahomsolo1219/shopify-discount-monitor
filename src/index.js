@@ -59,7 +59,7 @@ async function poll() {
     }
 
     store.save(currentDiscounts);
-    lastPollTime = new Date().toISOString();
+    lastPollTime = shopify.formatLastPoll();
     isFirstRun = false;
   } catch (err) {
     console.error(`[${label}] Error during poll:`, err.message);
