@@ -68,7 +68,6 @@ function buildNewEmbed(discount) {
     { name: 'Status', value: getStatus(discount), inline: true },
     { name: 'Valid From', value: formatDate(discount.starts_at), inline: true },
     { name: 'Valid Until', value: formatDate(discount.ends_at), inline: true },
-    { name: 'Created By', value: discount.created_by || 'Shopify Admin', inline: true },
   ];
 
   return {
@@ -89,7 +88,6 @@ function buildEditedEmbed(discount, changes) {
 
   const fields = [
     { name: 'Code', value: discount.code, inline: false },
-    { name: 'Modified By', value: discount.updated_by || 'Shopify Admin', inline: false },
   ];
 
   for (const change of changes) {

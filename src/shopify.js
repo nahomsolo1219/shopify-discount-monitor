@@ -73,31 +73,6 @@ async function fetchDiscountCodes(priceRuleId) {
 }
 
 /**
- * Try to fetch events for a price rule to find who created/updated it.
- * Shopify REST API price_rules don't include user info directly,
- * but the Events API can provide attribution via the `message` field.
- * Returns { created_by, updated_by } or empty strings if unavailable.
- */
-async function fetchPriceRuleAttribution(priceRuleId) {
-  try {
-    const { json } = await shopifyFetch(
-      `${BASE_URL}/events.json?filter=PriceRule&verb=create&limit=5`
-    );
-    const events = json.events || [];
-    // Look for an event matching this price rule
-    const createEvent = events.find(
-      (e) => e.subject_id === priceRuleId && e.verb === 'create'
-    );
-    if (createEvent && createEvent.message) {
-      return { created_by: createEvent.message, updated_by: '' };
-    }
-  } catch {
-    // Events API may not be available — that's fine
-  }
-  return { created_by: '', updated_by: '' };
-}
-
-/**
  * Fetch all discounts: price rules enriched with their discount codes.
  * Returns a map keyed by "priceRuleId-discountCodeId" for easy diffing.
  */
@@ -107,9 +82,6 @@ async function fetchAllDiscounts() {
 
   for (const rule of priceRules) {
     const codes = await fetchDiscountCodes(rule.id);
-
-    // Try to get attribution info
-    const attribution = await fetchPriceRuleAttribution(rule.id);
 
     const baseFields = {
       price_rule_id: rule.id,
@@ -125,8 +97,6 @@ async function fetchAllDiscounts() {
       created_at: rule.created_at,
       updated_at: rule.updated_at,
       prerequisite_subtotal_range: rule.prerequisite_subtotal_range,
-      created_by: attribution.created_by,
-      updated_by: attribution.updated_by,
     };
 
     if (codes.length === 0) {
