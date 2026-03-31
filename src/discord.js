@@ -6,6 +6,7 @@ const COLORS = {
   GREEN: 0x2ecc71,
   ORANGE: 0xf39c12,
   RED: 0xe74c3c,
+  PURPLE: 0x9b59b6,
 };
 
 function isHighValue(discount) {
@@ -139,6 +140,69 @@ async function sendEmbed(embed) {
   }
 }
 
+// Klaviyo coupon embeds
+
+function buildKlaviyoNewEmbed(coupon) {
+  return {
+    title: '📧 New Klaviyo Coupon Rule Created',
+    color: COLORS.PURPLE,
+    fields: [
+      { name: 'Name', value: coupon.external_id || 'N/A', inline: true },
+      { name: 'Description', value: coupon.description || 'N/A', inline: false },
+    ],
+    footer: { text: `Detected: ${formatNow()} MT` },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildKlaviyoEditedEmbed(coupon, changes) {
+  const fields = [
+    { name: 'Name', value: coupon.external_id || 'N/A', inline: false },
+  ];
+
+  for (const change of changes) {
+    const label = change.field.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    fields.push({
+      name: label,
+      value: `${change.oldValue ?? 'N/A'} → ${change.newValue ?? 'N/A'}`,
+      inline: false,
+    });
+  }
+
+  return {
+    title: '📧 Klaviyo Coupon Rule Modified',
+    color: COLORS.PURPLE,
+    fields,
+    footer: { text: `Modified: ${formatNow()} MT` },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function buildKlaviyoDeletedEmbed(coupon) {
+  return {
+    title: '📧 Klaviyo Coupon Rule Removed',
+    color: COLORS.PURPLE,
+    fields: [
+      { name: 'Name', value: coupon.external_id || 'N/A', inline: true },
+      { name: 'Description', value: coupon.description || 'N/A', inline: false },
+    ],
+    footer: { text: `Removed: ${formatNow()} MT` },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+async function notifyKlaviyoNew(coupon) {
+  await sendEmbed(buildKlaviyoNewEmbed(coupon));
+}
+
+async function notifyKlaviyoEdited(coupon, changes) {
+  await sendEmbed(buildKlaviyoEditedEmbed(coupon, changes));
+}
+
+async function notifyKlaviyoDeleted(coupon) {
+  await sendEmbed(buildKlaviyoDeletedEmbed(coupon));
+}
+
 async function notifyNew(discount) {
   await sendEmbed(buildNewEmbed(discount));
 }
@@ -151,4 +215,7 @@ async function notifyDeleted(discount) {
   await sendEmbed(buildDeletedEmbed(discount));
 }
 
-module.exports = { notifyNew, notifyEdited, notifyDeleted };
+module.exports = {
+  notifyNew, notifyEdited, notifyDeleted,
+  notifyKlaviyoNew, notifyKlaviyoEdited, notifyKlaviyoDeleted,
+};

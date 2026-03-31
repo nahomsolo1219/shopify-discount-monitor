@@ -73,15 +73,36 @@ async function fetchDiscountCodes(priceRuleId) {
 }
 
 /**
+ * Check if a price rule is likely Klaviyo-generated.
+ * Criteria: title matches a known Klaviyo coupon name, or the rule
+ * has more discount codes than the configured threshold.
+ */
+function isKlaviyoGenerated(rule, codeCount, klaviyoCouponNames) {
+  if (klaviyoCouponNames.has(rule.title)) {
+    return true;
+  }
+  if (codeCount >= config.klaviyoFilterThreshold) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Fetch all discounts: price rules enriched with their discount codes.
+ * Filters out Klaviyo-generated price rules when Klaviyo names are provided.
  * Returns a map keyed by "priceRuleId-discountCodeId" for easy diffing.
  */
-async function fetchAllDiscounts() {
+async function fetchAllDiscounts(klaviyoCouponNames = new Set()) {
   const priceRules = await fetchPriceRules();
   const discountMap = {};
 
   for (const rule of priceRules) {
     const codes = await fetchDiscountCodes(rule.id);
+
+    // Filter out Klaviyo-generated rules
+    if (klaviyoCouponNames.size > 0 && isKlaviyoGenerated(rule, codes.length, klaviyoCouponNames)) {
+      continue;
+    }
 
     const baseFields = {
       price_rule_id: rule.id,
