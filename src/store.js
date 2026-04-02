@@ -2,8 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
-const SHOPIFY_STORE_FILE = path.join(DATA_DIR, 'known-discounts.json');
-const KLAVIYO_STORE_FILE = path.join(DATA_DIR, 'known-klaviyo-coupons.json');
+const STORE_FILE = path.join(DATA_DIR, 'known-discounts.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -11,99 +10,79 @@ function ensureDataDir() {
   }
 }
 
-function loadFile(filePath) {
+function load() {
   ensureDataDir();
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(STORE_FILE)) {
     return {};
   }
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
   } catch {
-    console.error(`Failed to parse ${path.basename(filePath)}, starting fresh`);
+    console.error('Failed to parse store file, starting fresh');
     return {};
   }
 }
 
-function saveFile(filePath, data) {
+function save(data) {
   ensureDataDir();
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+  fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2));
 }
 
-// Shopify store
-function load() {
-  return loadFile(SHOPIFY_STORE_FILE);
-}
-
-function save(discounts) {
-  saveFile(SHOPIFY_STORE_FILE, discounts);
-}
-
-// Klaviyo store
-function loadKlaviyo() {
-  return loadFile(KLAVIYO_STORE_FILE);
-}
-
-function saveKlaviyo(coupons) {
-  saveFile(KLAVIYO_STORE_FILE, coupons);
-}
+const TRACKED_FIELDS = [
+  'title', 'value', 'value_type', 'usage_limit',
+  'once_per_customer', 'starts_at', 'ends_at',
+  'target_type', 'target_selection', 'allocation_method',
+  'prerequisite_subtotal_range', 'prerequisite_quantity_range',
+  'prerequisite_shipping_price_range', 'discount_codes_count',
+];
 
 /**
- * Compare current items against the stored state.
+ * Compare current price rules against the stored state.
  * Returns { added: [], edited: [], deleted: [] }
  */
-function diff(stored, current, trackedFields) {
+function diff(stored, current) {
   const added = [];
   const edited = [];
   const deleted = [];
 
   const currentKeys = new Set(Object.keys(current));
 
-  for (const [key, item] of Object.entries(current)) {
+  for (const [key, rule] of Object.entries(current)) {
     if (!stored[key]) {
-      added.push(item);
-    } else if (trackedFields) {
-      const changes = getChanges(stored[key], item, trackedFields);
+      added.push(rule);
+    } else {
+      const changes = getChanges(stored[key], rule);
       if (changes.length > 0) {
-        edited.push({ discount: item, changes });
+        edited.push({ rule, changes });
       }
     }
   }
 
-  for (const [key, item] of Object.entries(stored)) {
+  for (const [key, rule] of Object.entries(stored)) {
     if (!currentKeys.has(key)) {
-      deleted.push(item);
+      deleted.push(rule);
     }
   }
 
   return { added, edited, deleted };
 }
 
-const SHOPIFY_TRACKED_FIELDS = [
-  'title', 'value', 'value_type', 'usage_limit',
-  'once_per_customer', 'starts_at', 'ends_at',
-  'target_type', 'target_selection', 'prerequisite_subtotal_range',
-];
-
-const KLAVIYO_TRACKED_FIELDS = ['external_id', 'description'];
-
-function diffShopify(stored, current) {
-  return diff(stored, current, SHOPIFY_TRACKED_FIELDS);
-}
-
-function diffKlaviyo(stored, current) {
-  return diff(stored, current, KLAVIYO_TRACKED_FIELDS);
-}
-
-function getChanges(oldItem, newItem, trackedFields) {
+function getChanges(oldRule, newRule) {
   const changes = [];
-  for (const field of trackedFields) {
-    const oldVal = String(oldItem[field] ?? '');
-    const newVal = String(newItem[field] ?? '');
+  for (const field of TRACKED_FIELDS) {
+    const oldVal = stringify(oldRule[field]);
+    const newVal = stringify(newRule[field]);
     if (oldVal !== newVal) {
-      changes.push({ field, oldValue: oldItem[field], newValue: newItem[field] });
+      changes.push({ field, oldValue: oldRule[field], newValue: newRule[field] });
     }
   }
   return changes;
 }
 
-module.exports = { load, save, loadKlaviyo, saveKlaviyo, diffShopify, diffKlaviyo };
+function stringify(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+}
+
+module.exports = { load, save, diff };

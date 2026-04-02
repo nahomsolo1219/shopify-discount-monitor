@@ -1,15 +1,16 @@
 # Shopify Discount Monitor
 
-A lightweight polling service that monitors Shopify discount codes and Klaviyo coupon rules, posting notifications to a Discord channel via webhook. Detects new, modified, and deleted coupons with rich embed formatting.
+A lightweight polling service that monitors Shopify price rules and posts notifications to a Discord channel via webhook. Detects new, modified, and deleted coupons with rich embed formatting.
 
 ## Features
 
-- Polls Shopify Admin API for price rules and discount codes
-- Polls Klaviyo Coupons API for coupon rules (optional)
-- Filters out Klaviyo-generated bulk discount codes from Shopify notifications
-- Detects new, edited, and deleted discounts/coupons
-- Sends color-coded Discord embeds (green = new, orange = edited, red = deleted, purple = Klaviyo)
+- Monitors Shopify price rules (not individual codes) for efficient tracking
+- Filters out bulk-generated rules (Klaviyo, apps) by code count threshold
+- Detects new, edited, and deleted discount rules
+- Sends color-coded Discord embeds (green = new, orange = edited, red = deleted)
+- Shows discount restrictions: minimum purchase, minimum quantity, target selection, allocation method
 - High-value discount alerts when amount exceeds a configurable threshold
+- Discord rate limiting with 1s delay between messages and 429 retry handling
 - Silent first run to avoid spamming on startup
 - Local JSON store for change detection across restarts
 - Health check endpoint for uptime monitoring
@@ -31,18 +32,7 @@ A lightweight polling service that monitors Shopify discount codes and Klaviyo c
 2. Go to **Integrations > Webhooks**
 3. Create a new webhook, select the target channel, and copy the URL
 
-### 3. Klaviyo API Key (Optional)
-
-If your marketing team creates coupons in Klaviyo (which auto-generates many discount codes in Shopify), enable Klaviyo integration to:
-- Monitor Klaviyo coupon rules directly
-- Filter out Klaviyo-generated bulk codes from Shopify notifications
-
-To set up:
-1. Go to **Klaviyo > Settings > API Keys**
-2. Create a private API key with read access to Coupons
-3. Add the key as `KLAVIYO_API_KEY` in your environment variables
-
-### 4. Environment Variables
+### 3. Environment Variables
 
 Copy `.env.example` to `.env` and fill in your values:
 
@@ -62,10 +52,9 @@ cp .env.example .env
 | `POLL_INTERVAL_MINUTES` | How often to check for changes (default: 5) | No |
 | `PORT` | Health check server port (default: 3000) | No |
 | `HIGH_VALUE_THRESHOLD` | Dollar amount that triggers high-value alerts (default: 500) | No |
-| `KLAVIYO_API_KEY` | Klaviyo private API key for coupon monitoring | No |
-| `KLAVIYO_FILTER_THRESHOLD` | Code count threshold for Klaviyo filtering (default: 10) | No |
+| `BULK_CODE_THRESHOLD` | Skip price rules with this many+ codes (default: 10) | No |
 
-### 5. Authorize & Run
+### 4. Authorize & Run
 
 ```bash
 npm install
@@ -83,6 +72,10 @@ No Shopify token found. Visit {APP_URL}/auth to authorize the app.
 
 The OAuth token is stored locally in `data/token.json` and persists across restarts. It's an offline access token that doesn't expire.
 
+## Filtering Bulk Discount Rules
+
+Marketing tools like Klaviyo auto-generate hundreds of unique discount codes under a single Shopify price rule. To avoid notification spam, the app skips any price rule that has more discount codes than `BULK_CODE_THRESHOLD` (default: 10). Only manually-created rules with a small number of codes are tracked.
+
 ## Deploy to Railway
 
 1. Push this repo to GitHub
@@ -93,15 +86,16 @@ The OAuth token is stored locally in `data/token.json` and persists across resta
 6. Once deployed, visit `{APP_URL}/auth` to authorize the app with Shopify
 7. After OAuth, copy the `SHOPIFY_ACCESS_TOKEN` from the callback page and add it as a Railway env var
 
-The health check endpoint at `GET /` returns the service status, authorization state, and last poll times for both Shopify and Klaviyo.
+The health check endpoint at `GET /` returns the service status, authorization state, and last poll time.
 
 ## How It Works
 
-1. On startup, checks for a stored OAuth token in `data/token.json` or `SHOPIFY_ACCESS_TOKEN` env var
+1. On startup, checks for a stored OAuth token in `SHOPIFY_ACCESS_TOKEN` env var or `data/token.json`
 2. If no token, waits for the user to complete OAuth via `/auth`
-3. Once authorized, fetches all existing discounts and stores them locally (no notifications sent on first sync)
-4. If Klaviyo is configured, fetches all existing coupon rules too (silent first sync)
-5. Every N minutes, polls Klaviyo first (to get coupon names for filtering), then polls Shopify
-6. Shopify price rules that match a Klaviyo coupon name or have 10+ discount codes are filtered out
-7. Sends Discord notifications for any new, modified, or deleted discounts/coupons
-8. Updates the local store after each poll cycle
+3. Once authorized, fetches all price rules from Shopify
+4. For each price rule, gets the discount code count (lightweight count endpoint)
+5. Skips rules with 10+ codes (bulk/app-generated) — configurable via `BULK_CODE_THRESHOLD`
+6. Stores remaining rules locally (no notifications sent on first sync)
+7. Every N minutes, re-fetches and compares against the local store
+8. Sends Discord notifications for any new, modified, or deleted price rules
+9. Discord messages are sent sequentially with a 1-second delay to avoid rate limiting

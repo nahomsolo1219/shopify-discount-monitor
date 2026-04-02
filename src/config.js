@@ -20,6 +20,5 @@ module.exports = {
   port: parseInt(process.env.PORT, 10) || 3000,
   highValueThreshold: parseFloat(process.env.HIGH_VALUE_THRESHOLD) || 500,
   shopifyApiVersion: '2024-10',
-  klaviyoApiKey: process.env.KLAVIYO_API_KEY || '',
-  klaviyoFilterThreshold: parseInt(process.env.KLAVIYO_FILTER_THRESHOLD, 10) || 10,
+  bulkCodeThreshold: parseInt(process.env.BULK_CODE_THRESHOLD, 10) || 10,
 };

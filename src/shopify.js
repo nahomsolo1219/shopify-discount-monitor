@@ -47,7 +47,6 @@ async function fetchAllPages(url, dataKey) {
     const { json, headers: resHeaders } = await shopifyFetch(nextUrl);
     results.push(...(json[dataKey] || []));
 
-    // Parse Link header for next page
     nextUrl = null;
     const linkHeader = resHeaders.get('link');
     if (linkHeader) {
@@ -65,52 +64,41 @@ async function fetchPriceRules() {
   return fetchAllPages(`${BASE_URL}/price_rules.json?limit=250`, 'price_rules');
 }
 
-async function fetchDiscountCodes(priceRuleId) {
-  return fetchAllPages(
-    `${BASE_URL}/price_rules/${priceRuleId}/discount_codes.json?limit=250`,
-    'discount_codes'
+async function fetchDiscountCodeCount(priceRuleId) {
+  const { json } = await shopifyFetch(
+    `${BASE_URL}/price_rules/${priceRuleId}/discount_codes/count.json`
   );
+  return json.count || 0;
 }
 
 /**
- * Check if a price rule is likely Klaviyo-generated.
- * Criteria: title matches a known Klaviyo coupon name, or the rule
- * has more discount codes than the configured threshold.
+ * Fetch all price rules, enriched with discount code counts.
+ * Filters out bulk-generated rules (code count >= threshold).
+ * Returns a map keyed by price rule ID.
  */
-function isKlaviyoGenerated(rule, codeCount, klaviyoCouponNames) {
-  if (klaviyoCouponNames.has(rule.title)) {
-    return true;
-  }
-  if (codeCount >= config.klaviyoFilterThreshold) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Fetch all discounts: price rules enriched with their discount codes.
- * Filters out Klaviyo-generated price rules when Klaviyo names are provided.
- * Returns a map keyed by "priceRuleId-discountCodeId" for easy diffing.
- */
-async function fetchAllDiscounts(klaviyoCouponNames = new Set()) {
+async function fetchAllPriceRules() {
   const priceRules = await fetchPriceRules();
-  const discountMap = {};
+  const ruleMap = {};
+  let skipped = 0;
 
   for (const rule of priceRules) {
-    const codes = await fetchDiscountCodes(rule.id);
+    const codeCount = await fetchDiscountCodeCount(rule.id);
 
-    // Filter out Klaviyo-generated rules
-    if (klaviyoCouponNames.size > 0 && isKlaviyoGenerated(rule, codes.length, klaviyoCouponNames)) {
+    if (codeCount >= config.bulkCodeThreshold) {
+      skipped++;
       continue;
     }
 
-    const baseFields = {
+    const key = `rule-${rule.id}`;
+    ruleMap[key] = {
+      key,
       price_rule_id: rule.id,
       title: rule.title,
       value: rule.value,
       value_type: rule.value_type,
       target_type: rule.target_type,
       target_selection: rule.target_selection,
+      allocation_method: rule.allocation_method,
       usage_limit: rule.usage_limit,
       once_per_customer: rule.once_per_customer,
       starts_at: rule.starts_at,
@@ -118,27 +106,19 @@ async function fetchAllDiscounts(klaviyoCouponNames = new Set()) {
       created_at: rule.created_at,
       updated_at: rule.updated_at,
       prerequisite_subtotal_range: rule.prerequisite_subtotal_range,
+      prerequisite_quantity_range: rule.prerequisite_quantity_range,
+      prerequisite_shipping_price_range: rule.prerequisite_shipping_price_range,
+      entitled_product_ids: rule.entitled_product_ids,
+      entitled_collection_ids: rule.entitled_collection_ids,
+      discount_codes_count: codeCount,
     };
-
-    if (codes.length === 0) {
-      const key = `rule-${rule.id}`;
-      discountMap[key] = { key, ...baseFields, code: '(no code)' };
-      continue;
-    }
-
-    for (const code of codes) {
-      const key = `rule-${rule.id}-code-${code.id}`;
-      discountMap[key] = {
-        key,
-        ...baseFields,
-        discount_code_id: code.id,
-        code: code.code,
-        usage_count: code.usage_count,
-      };
-    }
   }
 
-  return discountMap;
+  if (skipped > 0) {
+    console.log(`[Shopify] Skipped ${skipped} bulk-generated price rules (${config.bulkCodeThreshold}+ codes)`);
+  }
+
+  return ruleMap;
 }
 
 function formatLastPoll() {
@@ -149,4 +129,4 @@ function formatLastPoll() {
   });
 }
 
-module.exports = { fetchAllDiscounts, formatLastPoll };
+module.exports = { fetchAllPriceRules, formatLastPoll };
