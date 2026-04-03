@@ -19,7 +19,6 @@ app.get('/', (_req, res) => {
     authorized: isTokenAvailable(),
     lastPoll: lastPollTime,
     pollInterval: `${config.pollIntervalMinutes} minutes`,
-    bulkCodeThreshold: config.bulkCodeThreshold,
   });
 });
 

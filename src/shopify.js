@@ -64,31 +64,15 @@ async function fetchPriceRules() {
   return fetchAllPages(`${BASE_URL}/price_rules.json?limit=250`, 'price_rules');
 }
 
-async function fetchDiscountCodeCount(priceRuleId) {
-  const { json } = await shopifyFetch(
-    `${BASE_URL}/price_rules/${priceRuleId}/discount_codes/count.json`
-  );
-  return json.count || 0;
-}
-
 /**
- * Fetch all price rules, enriched with discount code counts.
- * Filters out bulk-generated rules (code count >= threshold).
- * Returns a map keyed by price rule ID.
+ * Fetch all price rules. Each rule is tracked once — individual discount
+ * codes are never fetched. Returns a map keyed by price rule ID.
  */
 async function fetchAllPriceRules() {
   const priceRules = await fetchPriceRules();
   const ruleMap = {};
-  let skipped = 0;
 
   for (const rule of priceRules) {
-    const codeCount = await fetchDiscountCodeCount(rule.id);
-
-    if (codeCount >= config.bulkCodeThreshold) {
-      skipped++;
-      continue;
-    }
-
     const key = `rule-${rule.id}`;
     ruleMap[key] = {
       key,
@@ -110,12 +94,7 @@ async function fetchAllPriceRules() {
       prerequisite_shipping_price_range: rule.prerequisite_shipping_price_range,
       entitled_product_ids: rule.entitled_product_ids,
       entitled_collection_ids: rule.entitled_collection_ids,
-      discount_codes_count: codeCount,
     };
-  }
-
-  if (skipped > 0) {
-    console.log(`[Shopify] Skipped ${skipped} bulk-generated price rules (${config.bulkCodeThreshold}+ codes)`);
   }
 
   return ruleMap;

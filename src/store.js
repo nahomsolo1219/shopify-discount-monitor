@@ -33,7 +33,7 @@ const TRACKED_FIELDS = [
   'once_per_customer', 'starts_at', 'ends_at',
   'target_type', 'target_selection', 'allocation_method',
   'prerequisite_subtotal_range', 'prerequisite_quantity_range',
-  'prerequisite_shipping_price_range', 'discount_codes_count',
+  'prerequisite_shipping_price_range',
 ];
 
 /**

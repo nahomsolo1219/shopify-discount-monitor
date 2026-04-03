@@ -137,7 +137,6 @@ function buildNewEmbed(rule) {
     { name: 'Status', value: getStatus(rule), inline: true },
     { name: 'Valid From', value: formatDate(rule.starts_at), inline: true },
     { name: 'Valid Until', value: formatDate(rule.ends_at), inline: true },
-    { name: 'Discount Codes', value: String(rule.discount_codes_count), inline: true },
     ...buildRestrictionFields(rule),
   ];
 
