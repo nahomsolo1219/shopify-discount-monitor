@@ -68,11 +68,18 @@ async function fetchPriceRules() {
  * Fetch all price rules. Each rule is tracked once — individual discount
  * codes are never fetched. Returns a map keyed by price rule ID.
  */
+const KLAVIYO_TIMESTAMP_RE = /\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?\)\s*$/;
+
 async function fetchAllPriceRules() {
   const priceRules = await fetchPriceRules();
   const ruleMap = {};
 
   for (const rule of priceRules) {
+    if (KLAVIYO_TIMESTAMP_RE.test(rule.title)) {
+      console.log(`[Poll] Skipping Klaviyo-versioned rule: ${rule.title}`);
+      continue;
+    }
+
     const key = `rule-${rule.id}`;
     ruleMap[key] = {
       key,
