@@ -5,9 +5,15 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "test": "node --test \"test/**/*.test.js\""
   },
-  "keywords": ["shopify", "discord", "monitor", "discounts"],
+  "keywords": [
+    "shopify",
+    "discord",
+    "monitor",
+    "discounts"
+  ],
   "author": "",
   "license": "ISC",
   "type": "commonjs",

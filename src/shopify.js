@@ -29,7 +29,27 @@ async function shopifyFetch(url) {
     throw new Error(`Shopify API error: ${res.status} ${res.statusText} for ${url}`);
   }
 
+  warnOnApiVersionMismatch(res.headers.get('x-shopify-api-version'));
+
   return { json: await res.json(), headers: res.headers };
+}
+
+let warnedServedVersion = null;
+
+/**
+ * Shopify reports the version it actually served. If it differs from the one
+ * we asked for, the requested version has been retired and response formats
+ * may have changed — warn once per served version so it shows up in logs.
+ */
+function warnOnApiVersionMismatch(servedVersion) {
+  if (!servedVersion || servedVersion === config.shopifyApiVersion) return false;
+  if (warnedServedVersion === servedVersion) return true;
+  warnedServedVersion = servedVersion;
+  console.warn(
+    `[Shopify] Requested API version ${config.shopifyApiVersion} but Shopify served ` +
+      `${servedVersion}. The requested version is likely retired — update SHOPIFY_API_VERSION.`
+  );
+  return true;
 }
 
 function sleep(ms) {
@@ -115,4 +135,4 @@ function formatLastPoll() {
   });
 }
 
-module.exports = { fetchAllPriceRules, formatLastPoll };
+module.exports = { fetchAllPriceRules, formatLastPoll, warnOnApiVersionMismatch, BASE_URL };
