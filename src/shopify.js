@@ -90,13 +90,17 @@ async function fetchPriceRules() {
  */
 const KLAVIYO_TIMESTAMP_RE = /\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?\)\s*$/;
 
-async function fetchAllPriceRules() {
-  const priceRules = await fetchPriceRules();
+/**
+ * Turn raw Shopify price rules into the tracked-rule map, dropping
+ * Klaviyo-versioned rules. Returns { ruleMap, skipped }.
+ */
+function buildRuleMap(priceRules) {
   const ruleMap = {};
+  let skipped = 0;
 
   for (const rule of priceRules) {
-    if (KLAVIYO_TIMESTAMP_RE.test(rule.title)) {
-      console.log(`[Poll] Skipping Klaviyo-versioned rule: ${rule.title}`);
+    if (KLAVIYO_TIMESTAMP_RE.test(rule.title || '')) {
+      skipped++;
       continue;
     }
 
@@ -124,6 +128,15 @@ async function fetchAllPriceRules() {
     };
   }
 
+  return { ruleMap, skipped };
+}
+
+async function fetchAllPriceRules() {
+  const priceRules = await fetchPriceRules();
+  const { ruleMap, skipped } = buildRuleMap(priceRules);
+  if (skipped > 0) {
+    console.log(`[Poll] Skipped ${skipped} Klaviyo-versioned rule${skipped === 1 ? '' : 's'}`);
+  }
   return ruleMap;
 }
 
@@ -135,4 +148,4 @@ function formatLastPoll() {
   });
 }
 
-module.exports = { fetchAllPriceRules, formatLastPoll, warnOnApiVersionMismatch, BASE_URL };
+module.exports = { fetchAllPriceRules, buildRuleMap, formatLastPoll, warnOnApiVersionMismatch, BASE_URL };
