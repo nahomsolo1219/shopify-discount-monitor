@@ -1,13 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const TOKEN_FILE = path.join(DATA_DIR, 'token.json');
+const { ensureDataDir, writeFileAtomic } = require('./dataDir');
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+function getTokenFile() {
+  return path.join(ensureDataDir(), 'token.json');
 }
 
 function loadToken() {
@@ -17,12 +14,12 @@ function loadToken() {
   }
 
   // Fall back to local JSON file
-  ensureDataDir();
-  if (!fs.existsSync(TOKEN_FILE)) {
+  const tokenFile = getTokenFile();
+  if (!fs.existsSync(tokenFile)) {
     return null;
   }
   try {
-    const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
+    const data = JSON.parse(fs.readFileSync(tokenFile, 'utf-8'));
     return data.access_token || null;
   } catch {
     console.error('Failed to parse token file');
@@ -35,9 +32,8 @@ function saveToken(token) {
   process.env.SHOPIFY_ACCESS_TOKEN = token;
 
   // Save to JSON file as fallback for local dev
-  ensureDataDir();
-  fs.writeFileSync(
-    TOKEN_FILE,
+  writeFileAtomic(
+    getTokenFile(),
     JSON.stringify({ access_token: token, saved_at: new Date().toISOString() }, null, 2)
   );
 }

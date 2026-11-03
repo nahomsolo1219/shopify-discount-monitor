@@ -1,31 +1,29 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const STORE_FILE = path.join(DATA_DIR, 'known-discounts.json');
+const { ensureDataDir, writeFileAtomic } = require('./dataDir');
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+const STORE_FILENAME = 'known-discounts.json';
+
+function getStoreFile() {
+  return path.join(ensureDataDir(), STORE_FILENAME);
 }
 
 function load() {
-  ensureDataDir();
-  if (!fs.existsSync(STORE_FILE)) {
+  const file = getStoreFile();
+  if (!fs.existsSync(file)) {
     return {};
   }
   try {
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
+    return JSON.parse(fs.readFileSync(file, 'utf-8'));
   } catch {
-    console.error('Failed to parse store file, starting fresh');
+    console.error(`Failed to parse store file ${file}, starting fresh`);
     return {};
   }
 }
 
 function save(data) {
-  ensureDataDir();
-  fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2));
+  writeFileAtomic(getStoreFile(), JSON.stringify(data, null, 2));
 }
 
 const TRACKED_FIELDS = [
@@ -137,4 +135,4 @@ function canonical(val) {
   return JSON.stringify(normalize(val));
 }
 
-module.exports = { load, save, diff, getChanges, normalize, TRACKED_FIELDS };
+module.exports = { load, save, getStoreFile, diff, getChanges, normalize, TRACKED_FIELDS };
