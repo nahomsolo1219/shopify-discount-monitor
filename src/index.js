@@ -4,13 +4,24 @@ const config = require('./config');
 const shopify = require('./shopify');
 const discord = require('./discord');
 const store = require('./store');
+const { createPoller } = require('./poller');
+const { getDataDir } = require('./dataDir');
 const { isTokenAvailable } = require('./token');
 const auth = require('./auth');
 
 const app = express();
 let lastPollTime = null;
-let isFirstRun = true;
 let cronJob = null;
+
+const poller = createPoller({
+  fetchRules: shopify.fetchAllPriceRules,
+  store,
+  notifier: discord,
+  isAuthorized: isTokenAvailable,
+  onPollComplete: () => {
+    lastPollTime = shopify.formatLastPoll();
+  },
+});
 
 app.get('/', (_req, res) => {
   res.json({
@@ -19,66 +30,29 @@ app.get('/', (_req, res) => {
     authorized: isTokenAvailable(),
     lastPoll: lastPollTime,
     pollInterval: `${config.pollIntervalMinutes} minutes`,
+    pollInProgress: poller.isRunning(),
+    shopifyApiVersion: config.shopifyApiVersion,
   });
 });
 
-async function poll() {
-  if (!isTokenAvailable()) {
-    console.log('[Poll] No token available, skipping');
-    return;
-  }
-
-  const silent = isFirstRun;
-  const label = silent ? 'Initial sync' : 'Poll';
-
-  console.log(`[${label}] Fetching price rules from Shopify...`);
-
-  try {
-    const currentRules = await shopify.fetchAllPriceRules();
-    const storedRules = store.load();
-
-    const { added, edited, deleted } = store.diff(storedRules, currentRules);
-
-    console.log(
-      `[${label}] Found ${Object.keys(currentRules).length} price rules — ` +
-        `${added.length} new, ${edited.length} edited, ${deleted.length} deleted`
-    );
-
-    if (!silent) {
-      for (const rule of added) {
-        await discord.notifyNew(rule);
-      }
-      for (const { rule, changes } of edited) {
-        await discord.notifyEdited(rule, changes);
-      }
-      for (const rule of deleted) {
-        await discord.notifyDeleted(rule);
-      }
-    } else {
-      console.log('[Initial sync] Loaded existing price rules into store (no notifications sent)');
-    }
-
-    store.save(currentRules);
-    lastPollTime = shopify.formatLastPoll();
-    isFirstRun = false;
-  } catch (err) {
-    console.error(`[${label}] Error during poll:`, err.message);
-  }
-}
+const poll = () => poller.poll();
 
 function startPolling() {
   if (cronJob) return; // already running
 
-  console.log(`Starting poll cycle (every ${config.pollIntervalMinutes} minutes)`);
+  console.log(
+    `Starting poll cycle (every ${config.pollIntervalMinutes} minutes, ` +
+      `Shopify API ${config.shopifyApiVersion}, data dir ${getDataDir()})`
+  );
 
   // Run initial poll
   poll();
 
   // Schedule recurring polls
   const cronExpression = `*/${config.pollIntervalMinutes} * * * *`;
-  cronJob = cron.schedule(cronExpression, () => {
-    poll();
-  });
+  // noOverlap is a second line of defence; poller.poll() also refuses to
+  // run while a previous poll is still in progress.
+  cronJob = cron.schedule(cronExpression, poll, { noOverlap: true });
 }
 
 // Register OAuth routes — onTokenAcquired callback starts polling after auth

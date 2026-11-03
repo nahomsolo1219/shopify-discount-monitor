@@ -1,31 +1,29 @@
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const STORE_FILE = path.join(DATA_DIR, 'known-discounts.json');
+const { ensureDataDir, writeFileAtomic } = require('./dataDir');
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+const STORE_FILENAME = 'known-discounts.json';
+
+function getStoreFile() {
+  return path.join(ensureDataDir(), STORE_FILENAME);
 }
 
 function load() {
-  ensureDataDir();
-  if (!fs.existsSync(STORE_FILE)) {
+  const file = getStoreFile();
+  if (!fs.existsSync(file)) {
     return {};
   }
   try {
-    return JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
+    return JSON.parse(fs.readFileSync(file, 'utf-8'));
   } catch {
-    console.error('Failed to parse store file, starting fresh');
+    console.error(`Failed to parse store file ${file}, starting fresh`);
     return {};
   }
 }
 
 function save(data) {
-  ensureDataDir();
-  fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2));
+  writeFileAtomic(getStoreFile(), JSON.stringify(data, null, 2));
 }
 
 const TRACKED_FIELDS = [
@@ -70,8 +68,8 @@ function diff(stored, current) {
 function getChanges(oldRule, newRule) {
   const changes = [];
   for (const field of TRACKED_FIELDS) {
-    const oldVal = stringify(oldRule[field]);
-    const newVal = stringify(newRule[field]);
+    const oldVal = canonical(oldRule[field]);
+    const newVal = canonical(newRule[field]);
     if (oldVal !== newVal) {
       changes.push({ field, oldValue: oldRule[field], newValue: newRule[field] });
     }
@@ -79,10 +77,62 @@ function getChanges(oldRule, newRule) {
   return changes;
 }
 
-function stringify(val) {
-  if (val === null || val === undefined) return '';
-  if (typeof val === 'object') return JSON.stringify(val);
-  return String(val);
+const NUMERIC_RE = /^[-+]?(\d+\.?\d*|\.\d+)$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
+
+/**
+ * Normalise a value so that format-only differences between Shopify API
+ * versions compare equal:
+ *   - "-10.0" / "-10.00" / -10       -> -10
+ *   - "5" / 5                         -> 5
+ *   - "2024-01-01T00:00:00-07:00" / "2024-01-01T07:00:00Z" -> same instant
+ *   - "true" / true                   -> true
+ *   - null / undefined / "" / {} / [] / { greater_than_or_equal_to: null } -> null
+ *   - object key order is ignored
+ */
+function normalize(val) {
+  if (val === null || val === undefined) return null;
+
+  if (typeof val === 'number') {
+    if (!Number.isFinite(val)) return null;
+    return val === 0 ? 0 : val; // collapse -0
+  }
+
+  if (typeof val === 'boolean') return val;
+
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if (s === '') return null;
+    if (s === 'true') return true;
+    if (s === 'false') return false;
+    if (NUMERIC_RE.test(s)) return normalize(Number(s));
+    if (ISO_DATE_RE.test(s)) {
+      const t = Date.parse(s);
+      if (!Number.isNaN(t)) return new Date(t).toISOString();
+    }
+    return s;
+  }
+
+  if (Array.isArray(val)) {
+    const items = val.map(normalize).filter((v) => v !== null);
+    if (items.length === 0) return null;
+    return items;
+  }
+
+  if (typeof val === 'object') {
+    const out = {};
+    for (const key of Object.keys(val).sort()) {
+      const v = normalize(val[key]);
+      if (v !== null) out[key] = v;
+    }
+    return Object.keys(out).length === 0 ? null : out;
+  }
+
+  return val;
 }
 
-module.exports = { load, save, diff };
+function canonical(val) {
+  return JSON.stringify(normalize(val));
+}
+
+module.exports = { load, save, getStoreFile, diff, getChanges, normalize, TRACKED_FIELDS };

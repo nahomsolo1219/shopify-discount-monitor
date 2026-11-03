@@ -194,6 +194,23 @@ function buildDeletedEmbed(rule) {
   };
 }
 
+function buildSummaryEmbed(count, breakdown = {}) {
+  const parts = [];
+  if (breakdown.added) parts.push(`${breakdown.added} new`);
+  if (breakdown.edited) parts.push(`${breakdown.edited} edited`);
+  if (breakdown.deleted) parts.push(`${breakdown.deleted} deleted`);
+  return {
+    title: `📋 ${count} more change${count === 1 ? '' : 's'}`,
+    color: COLORS.ORANGE,
+    description:
+      `${count} more coupon change${count === 1 ? ' was' : 's were'} detected in this poll` +
+      (parts.length ? ` (${parts.join(', ')})` : '') +
+      '. Not posted individually to avoid flooding the channel — check Shopify for details.',
+    footer: { text: `Detected: ${formatNow()} MT` },
+    timestamp: new Date().toISOString(),
+  };
+}
+
 function formatChangeValue(val) {
   if (val === null || val === undefined) return 'N/A';
   if (typeof val === 'object') return JSON.stringify(val);
@@ -240,4 +257,9 @@ async function notifyDeleted(rule) {
   await sleep(1000);
 }
 
-module.exports = { notifyNew, notifyEdited, notifyDeleted };
+async function notifySummary(count, breakdown) {
+  await sendEmbed(buildSummaryEmbed(count, breakdown));
+  await sleep(1000);
+}
+
+module.exports = { notifyNew, notifyEdited, notifyDeleted, notifySummary, buildSummaryEmbed };

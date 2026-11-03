@@ -11,8 +11,11 @@ A lightweight polling service that monitors Shopify price rules and posts notifi
 - Shows discount restrictions: minimum purchase, minimum quantity, target selection, allocation method
 - High-value discount alerts when amount exceeds a configurable threshold
 - Discord rate limiting with 1s delay between messages and 429 retry handling
+- At most 10 notifications per poll — anything beyond that is collapsed into one "N more changes" summary
+- Format-insensitive change detection (e.g. `-10.0` vs `-10.00`, `{}` vs `null`) so API format changes don't look like edits
+- Polls never overlap, and state is saved before notifications are sent
 - Silent first run to avoid spamming on startup
-- Local JSON store for change detection across restarts
+- JSON store under a configurable `DATA_DIR` (attach a Railway volume to keep it across redeploys)
 - Health check endpoint for uptime monitoring
 - OAuth 2.0 authorization (offline access token that doesn't expire)
 
@@ -49,7 +52,9 @@ cp .env.example .env
 | `SHOPIFY_ACCESS_TOKEN` | Set after OAuth to persist across redeployments | No |
 | `APP_URL` | Public URL of this app (e.g. `https://your-app.up.railway.app`) | Yes |
 | `DISCORD_WEBHOOK_URL` | Discord webhook URL | Yes |
-| `POLL_INTERVAL_MINUTES` | How often to check for changes (default: 5) | No |
+| `POLL_INTERVAL_MINUTES` | How often to check for changes, 1–59 (default: 5) | No |
+| `SHOPIFY_API_VERSION` | Shopify Admin API version (default: `2026-10`) | No |
+| `DATA_DIR` | Directory for the rule store and token file (default: `RAILWAY_VOLUME_MOUNT_PATH` if set, else `./data`) | No |
 | `PORT` | Health check server port (default: 3000) | No |
 | `HIGH_VALUE_THRESHOLD` | Dollar amount that triggers high-value alerts (default: 500) | No |
 
@@ -69,7 +74,7 @@ No Shopify token found. Visit {APP_URL}/auth to authorize the app.
 2. You'll be redirected to Shopify to authorize the app
 3. After approving, you'll be redirected back and the app will start polling automatically
 
-The OAuth token is stored locally in `data/token.json` and persists across restarts. It's an offline access token that doesn't expire.
+The OAuth token is stored in `$DATA_DIR/token.json` (default `data/token.json`) and persists across restarts. It's an offline access token that doesn't expire.
 
 ## Deploy to Railway
 
@@ -81,7 +86,22 @@ The OAuth token is stored locally in `data/token.json` and persists across resta
 6. Once deployed, visit `{APP_URL}/auth` to authorize the app with Shopify
 7. After OAuth, copy the `SHOPIFY_ACCESS_TOKEN` from the callback page and add it as a Railway env var
 
-The health check endpoint at `GET /` returns the service status, authorization state, and last poll time.
+### Persist state with a Railway volume
+
+Without a volume, the container filesystem is wiped on every redeploy, so the store of known rules is lost and rebuilt (silently) on the next start. To keep it:
+
+1. In the Railway dashboard, open the service and choose **New → Volume** (or right-click the service → **Attach volume**)
+2. Set the mount path, e.g. `/data`
+3. Add the env var `DATA_DIR=/data` (optional — Railway also sets `RAILWAY_VOLUME_MOUNT_PATH`, which the app uses when `DATA_DIR` is unset)
+4. Redeploy. The startup log shows the data dir in use: `Starting poll cycle (every 5 minutes, Shopify API 2026-10, data dir /data)`
+
+`known-discounts.json` and `token.json` are written there atomically (temp file + rename).
+
+### Shopify API version
+
+Shopify supports each Admin API version for about 12 months. Once a pinned version is retired, Shopify silently serves the oldest supported version instead, and response formats can change. The app defaults to `2026-10`; override with `SHOPIFY_API_VERSION` and bump it at least once a year. If Shopify serves a different version than requested, the app logs a warning once.
+
+The health check endpoint at `GET /` returns the service status, authorization state, last poll time, whether a poll is in progress, and the Shopify API version in use.
 
 ## How It Works
 
@@ -90,7 +110,16 @@ The app monitors **price rules**, not individual discount codes. Whether a rule 
 1. On startup, checks for a stored OAuth token in `SHOPIFY_ACCESS_TOKEN` env var or `data/token.json`
 2. If no token, waits for the user to complete OAuth via `/auth`
 3. Once authorized, fetches all price rules from Shopify and stores them locally (no notifications on first sync)
-4. Every N minutes, re-fetches and compares against the local store
-5. Sends Discord notifications for any new, modified, or deleted price rules
-6. Only changes to the rule itself (value, dates, restrictions, etc.) trigger edit notifications — code count changes are ignored
-7. Discord messages are sent sequentially with a 1-second delay to avoid rate limiting
+4. Every N minutes (default 5), re-fetches and compares against the local store. If the previous poll is still running, the tick is skipped
+5. Values are normalised before comparing (numbers, dates as instants, blank strings and empty ranges as "none"), so format-only differences are ignored. The fields that changed for each edited rule are logged
+6. The new state is saved **before** any notification is sent, so a slow or rate-limited Discord can never cause the same change to be posted twice
+7. Sends Discord notifications for new, modified, or deleted price rules — at most 10 per poll; if there are more, one summary message ("N more changes") covers the rest
+8. Only changes to the rule itself (value, dates, restrictions, etc.) trigger edit notifications — code count changes are ignored
+9. Klaviyo-versioned rules (titles ending in a timestamp) are skipped, with one summary log line per poll
+10. Discord messages are sent sequentially with a 1-second delay to avoid rate limiting
+
+## Tests
+
+```bash
+npm test
+```

@@ -29,7 +29,27 @@ async function shopifyFetch(url) {
     throw new Error(`Shopify API error: ${res.status} ${res.statusText} for ${url}`);
   }
 
+  warnOnApiVersionMismatch(res.headers.get('x-shopify-api-version'));
+
   return { json: await res.json(), headers: res.headers };
+}
+
+let warnedServedVersion = null;
+
+/**
+ * Shopify reports the version it actually served. If it differs from the one
+ * we asked for, the requested version has been retired and response formats
+ * may have changed — warn once per served version so it shows up in logs.
+ */
+function warnOnApiVersionMismatch(servedVersion) {
+  if (!servedVersion || servedVersion === config.shopifyApiVersion) return false;
+  if (warnedServedVersion === servedVersion) return true;
+  warnedServedVersion = servedVersion;
+  console.warn(
+    `[Shopify] Requested API version ${config.shopifyApiVersion} but Shopify served ` +
+      `${servedVersion}. The requested version is likely retired — update SHOPIFY_API_VERSION.`
+  );
+  return true;
 }
 
 function sleep(ms) {
@@ -70,13 +90,17 @@ async function fetchPriceRules() {
  */
 const KLAVIYO_TIMESTAMP_RE = /\(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(:\d{2})?\)\s*$/;
 
-async function fetchAllPriceRules() {
-  const priceRules = await fetchPriceRules();
+/**
+ * Turn raw Shopify price rules into the tracked-rule map, dropping
+ * Klaviyo-versioned rules. Returns { ruleMap, skipped }.
+ */
+function buildRuleMap(priceRules) {
   const ruleMap = {};
+  let skipped = 0;
 
   for (const rule of priceRules) {
-    if (KLAVIYO_TIMESTAMP_RE.test(rule.title)) {
-      console.log(`[Poll] Skipping Klaviyo-versioned rule: ${rule.title}`);
+    if (KLAVIYO_TIMESTAMP_RE.test(rule.title || '')) {
+      skipped++;
       continue;
     }
 
@@ -104,6 +128,15 @@ async function fetchAllPriceRules() {
     };
   }
 
+  return { ruleMap, skipped };
+}
+
+async function fetchAllPriceRules() {
+  const priceRules = await fetchPriceRules();
+  const { ruleMap, skipped } = buildRuleMap(priceRules);
+  if (skipped > 0) {
+    console.log(`[Poll] Skipped ${skipped} Klaviyo-versioned rule${skipped === 1 ? '' : 's'}`);
+  }
   return ruleMap;
 }
 
@@ -115,4 +148,4 @@ function formatLastPoll() {
   });
 }
 
-module.exports = { fetchAllPriceRules, formatLastPoll };
+module.exports = { fetchAllPriceRules, buildRuleMap, formatLastPoll, warnOnApiVersionMismatch, BASE_URL };
